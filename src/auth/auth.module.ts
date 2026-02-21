@@ -17,7 +17,7 @@ import { RefreshTokensModule } from 'src/refresh_tokens/refresh_tokens.module';
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_ACCESS_TOKEN_SECRET'),
         signOptions: {
-          expiresIn: ms(configService.get<string>('JWT_ACCESS_EXPIRE') as StringValue) / 1000,
+          expiresIn: ms(configService.get<string>('JWT_ACCESS_EXPIRE') as StringValue) / 1000, // thời gian sống của access token, thường sẽ ngắn hơn thời gian sống của refresh token, expiresIn sẽ được so sánh với thời gian hiện tại để kiểm tra xem access token đã hết hạn hay chưa, ở đây đang chuyển đổi từ ms sang giây vì expiresIn nhận giá trị là giây, còn trong file .env đang để thời gian sống của token là chuỗi như '15m', '7d' nên cần phải chuyển đổi sang giây để sử dụng được trong expiresIn
         },
       }),
       inject: [ConfigService],

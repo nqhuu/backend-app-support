@@ -4,12 +4,15 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from '../auth.service';
 
 @Injectable()
+// Đăng ký LocalStrategy với tên 'local' để có thể sử dụng trong LocalAuthGuard
 export class LocalStrategy extends PassportStrategy(Strategy) {
     constructor(private authService: AuthService) {
         super();
     }
 
-    //hàm validate được passport tự động gọi khi có yêu cầu đăng nhập, nó nhận 2 tham số username và password
+    // hàm validate được passport tự động gọi khi có yêu cầu đăng nhập, nó nhận 2 tham số username và password
+    // từ fe sẽ gửi yêu cầu đăng nhập với body có dạng { username: '...', password: '...' }, 
+    // nếu muốn đổi tên username và password thì phải override hàm validate của passport-local strategy để lấy giá trị từ req.body, ví dụ nếu muốn đổi thành { email: '...', pass: '...' } thì phải override hàm validate để lấy giá trị email và pass từ req.body
     // validate là hàm bắt buộc phải có khi kế thừa PassportStrategy, không thể đổi tên hàm này
     async validate(username: string, password: string): Promise<any> {
         const user = await this.authService.validateUser(username, password);

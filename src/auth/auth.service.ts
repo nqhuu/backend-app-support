@@ -5,6 +5,9 @@ import { IUser } from 'src/users/users.interface';
 import { JwtService } from '@nestjs/jwt';
 import ms, { StringValue } from 'ms';
 import { RefreshTokensService } from 'src/refresh_tokens/refresh_tokens.service';
+import { Response } from 'express';
+
+
 
 @Injectable()
 export class AuthService {
@@ -16,7 +19,7 @@ export class AuthService {
     private refreshTokensService: RefreshTokensService,
   ) { }
 
-  //ussername/ pass là 2 tham số thư viện passport nó ném về
+  // hàm validateUser sẽ được gọi trong LocalStrategy để kiểm tra xem username và password có hợp lệ hay không, nếu hợp lệ sẽ trả về thông tin user, nếu không hợp lệ sẽ trả về null
   async validateUser(username: string, password: string): Promise<any> {
     const user = await this.usersService.findOneByUsername(username);
     if (user) {
@@ -30,7 +33,8 @@ export class AuthService {
 
   async login(user: IUser, res: Response) {
     const { id, name, email, role } = user;
-    const payload = {
+    // payload là dữ liệu sẽ được mã hóa vào token, thường sẽ chứa thông tin về user như id, name, email, role,... để khi giải mã token ra có thể lấy được thông tin này mà không cần phải truy vấn database
+    const payload = { // sub: user.id, // sub là subject, có thể đặt tên gì cũng được nhưng thường đặt là sub để dễ hiểu đây là id của user
       sub: "token login",
       iss: "from server",
       id,
@@ -40,19 +44,19 @@ export class AuthService {
     };
 
     const refresh_token = this.createRefeshToken(payload);
-    console.log({ refresh_token });
+    const hashRefreshToken = await this.usersService.getHashPassword(refresh_token);
 
-    await this.refreshTokensService.updateUserToken(id, refresh_token);
+    await this.refreshTokensService.handleLogin(id, hashRefreshToken);
 
     // set refresh token vào cookie với 'key' là 'refresh_token' và giá trị là refresh_token
-    // res.cookie('refresh_token', refresh_token, {
-    //   httpOnly: true, // chỉ có server mới có thể truy cập cookie này
-    //   maxAge: ms(this.configService.get<string>('JWT_REFRESH_EXPIRE') as StringValue), // thơi gian sống của cookie
-    // })
+    res.cookie('refresh_token', refresh_token, {
+      httpOnly: true, // chỉ có server mới có thể truy cập cookie này
+      maxAge: ms(this.configService.get<string>('JWT_REFRESH_EXPIRE') as StringValue), // thơi gian sống của cookie
+    })
 
 
     return {
-      access_token: this.jwtService.sign(payload),
+      access_token: this.jwtService.sign(payload), // tạo access token dựa trên payload và secret đã cấu hình trong JwtStrategy
       user: {
         id,
         name,
@@ -60,6 +64,21 @@ export class AuthService {
         role
       }
     };
+  }
+
+  async logout(reqParams: Object, res: Response) {
+    // khi logout thì sẽ xóa refresh token trong database để không cho phép sử dụng refresh token đó để lấy access token mới nữa, đồng thời xóa cookie refresh_token trên trình duyệt
+    await this.refreshTokensService.handleLogout(reqParams); // set userId thành 0 và refreshToken thành rỗng để xóa refresh token trong database  
+
+    res.clearCookie('refresh_token', {
+      httpOnly: true, // chỉ có server mới có thể truy cập cookie này
+      secure: false, // chỉ gửi cookie qua kết nối HTTPS, nếu đang phát triển trên localhost thì có thể để false, nhưng khi deploy lên production thì nên để true để tăng cường bảo mật
+      // sameSite: 'strict', // chỉ gửi cookie khi request đến từ cùng một trang web, nếu để 'lax' thì sẽ gửi cookie khi request đến từ trang web khác nhưng chỉ khi người dùng tương tác với trang web đó (ví dụ: click vào link), nếu để 'none' thì sẽ gửi cookie khi request đến từ trang web khác mà không cần tương tác, nhưng khi để 'none' thì phải kết hợp với secure: true để đảm bảo an toàn, nếu không sẽ bị trình duyệt chặn vì lý do bảo mật
+    }); // xóa cookie refresh_token trên trình duyệt
+
+    return {
+      message: 'Logout successful'
+    }
   }
 
   createRefeshToken(payload: any) {
