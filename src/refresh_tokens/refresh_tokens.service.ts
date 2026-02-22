@@ -6,15 +6,15 @@ import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import ms, { StringValue } from 'ms';
-import { UsersService } from 'src/users/users.service';
-import { IUser } from 'src/users/users.interface';
+import { DataSource } from 'typeorm';
 @Injectable()
 export class RefreshTokensService {
 
   constructor(
-    @InjectRepository(RefreshToken)
+    @InjectRepository(RefreshToken) // InjectRepository là một decorator được sử dụng để inject repository của entity RefreshToken vào trong service, giúp service có thể sử dụng các phương thức của repository để thực hiện các thao tác với cơ sở dữ liệu liên quan đến entity RefreshToken
     private readonly refreshTokenRepository: Repository<RefreshToken>, // NestJS tự động cung cấp repository tại đây
-    private readonly config: ConfigService, // NestJS tự động cung cấp repository tại đây
+    private readonly config: ConfigService, // ConfigService là một service được cung cấp bởi @nestjs/config, nó giúp chúng ta truy cập vào các biến môi trường đã được load bởi ConfigModule, trong trường hợp này chúng ta sẽ sử dụng ConfigService để lấy giá trị của biến môi trường JWT_REFRESH_EXPIRE để cấu hình thời gian hết hạn cho refresh token
+    private readonly dataSource: DataSource, // DataSource là một class được sử dụng để thiết lập kết nối với cơ sở dữ liệu và quản lý các entity, repository, và các tính năng khác của TypeORM. Nó cung cấp một cách để cấu hình kết nối, định nghĩa các entity, và thực hiện các thao tác với cơ sở dữ liệu thông qua các repository hoặc query builder. Ở đây chúng ta sẽ sử dụng DataSource để thực hiện transaction khi xử lý login để đảm bảo tính toàn vẹn của dữ liệu khi có nhiều thao tác liên quan đến refresh token cần thực hiện cùng lúc, ví dụ như tạo mới refresh token, thu hồi refresh token cũ, xóa refresh token cũ nếu đã có 2 refresh token, v.v.
   ) { }
 
   create(createRefreshTokenDto: CreateRefreshTokenDto) {
@@ -22,81 +22,60 @@ export class RefreshTokensService {
   }
 
   async handleLogin(userId: number, refreshToken: string) {
-    // nếu chưa có thì tạo mới
-    const existingToken = await this.refreshTokenRepository.find({
-      where: { userId },
-      order: { createdAt: 'ASC' }, // cũ → mới
-    });
-    if (existingToken) {
-      if (existingToken.length === 1) {
-        if (!existingToken[0].isRevoked) {
-          await this.refreshTokenRepository.update(
-            { userId: userId },
-            {
-              isRevoked: true, // isRevoked sẽ được set thành true khi user logout hoặc khi refresh token bị nghi ngờ bị lộ, khi isRevoked là true thì sẽ không cho phép sử dụng refresh token đó để lấy access token mới nữa
-              expiredAt: new Date(Date.now()) // set thời gian hết hạn cho refresh token, expiredAt sẽ được so sánh với thời gian hiện tại để kiểm tra xem refresh token đã hết hạn hay chưa
-            },// set thời gian hết hạn cho refresh token, expiresAt sẽ được so sánh với thời gian hiện tại để kiểm tra xem refresh token đã hết hạn hay chưa
-          );
+    try {
+      // nếu chưa có thì tạo mới
+      await this.dataSource.transaction(async manager => { // sử dụng transaction để đảm bảo tính toàn vẹn của dữ liệu khi có nhiều thao tác liên quan đến refresh token cần thực hiện cùng lúc, ví dụ như tạo mới refresh token, thu hồi refresh token cũ, xóa refresh token cũ nếu đã có 2 refresh token, v.v. Nếu có lỗi xảy ra trong quá trình thực hiện các thao tác trong transaction thì tất cả các thao tác sẽ được rollback về trạng thái ban đầu để tránh dữ liệu bị lỗi hoặc không nhất quán
+        const repository = manager.getRepository(RefreshToken); // sử dụng manager.getRepository để lấy repository của entity RefreshToken trong transaction, giúp chúng ta thực hiện các thao tác với cơ sở dữ liệu liên quan đến entity RefreshToken trong transaction
+        const existingToken = await repository.find({
+          where: { userId },
+          order: { createdAt: 'ASC' }, // cũ → mới
+        });
+        console.log('existingToken===>', existingToken);
+        if (existingToken.length === 0) {
+          console.log('chưa có refresh token nào, tạo mới refresh token');
+          await repository.save({
+            userId,
+            refreshToken,
+            isRevoked: false, // isRevoked sẽ được set thành true khi user logout hoặc khi refresh token bị nghi ngờ bị lộ, khi isRevoked là true thì sẽ không cho phép sử dụng refresh token đó để lấy access token mới nữa
+            expiredAt: new Date(Date.now() + ms(this.config.get<string>('JWT_REFRESH_EXPIRE') as StringValue)), // set thời gian hết hạn cho refresh token, expiresAt sẽ được so sánh với thời gian hiện tại để kiểm tra xem refresh token đã hết hạn hay chưa
+          });
+          return;
         }
 
-        await this.refreshTokenRepository.save({
+        const activeTokens = existingToken.find(token => !token.isRevoked); // tìm token nào chưa bị revoke để thu hồi token đó
+        activeTokens && await repository.update(
+          { id: activeTokens.id },
+          {
+            isRevoked: true, // isRevoked sẽ được set thành true khi user logout hoặc khi refresh token bị nghi ngờ bị lộ, khi isRevoked là true thì sẽ không cho phép sử dụng refresh token đó để lấy access token mới nữa
+            expiredAt: new Date(Date.now()) // set thời gian hết hạn cho refresh token, expiredAt sẽ được so sánh với thời gian hiện tại để kiểm tra xem refresh token đã hết hạn hay chưa
+          },// set thời gian hết hạn cho refresh token, expiresAt sẽ được so sánh với thời gian hiện tại để kiểm tra xem refresh token đã hết hạn hay chưa
+        );
+
+
+        if (existingToken.length >= 2) {
+
+          // xóa token cũ nhất (token đầu tiên trong mảng existingToken) để chỉ giữ lại 1 token thôi
+          await repository.delete({ // xóa token nào bị revoke để chỉ giữ lại token chưa bị revoke thôi
+            id: existingToken[0].id
+          });
+        }
+        // sau đó tạo mới refresh token mới
+        await repository.save({
           userId,
           refreshToken,
           isRevoked: false, // isRevoked sẽ được set thành true khi user logout hoặc khi refresh token bị nghi ngờ bị lộ, khi isRevoked là true thì sẽ không cho phép sử dụng refresh token đó để lấy access token mới nữa
           expiredAt: new Date(Date.now() + ms(this.config.get<string>('JWT_REFRESH_EXPIRE') as StringValue)), // set thời gian hết hạn cho refresh token, expiresAt sẽ được so sánh với thời gian hiện tại để kiểm tra xem refresh token đã hết hạn hay chưa
         });
-      }
-      if (existingToken.length === 2) {
-        const isRevokedToken = existingToken.find(token => token.isRevoked === false); // kiểm tra xem có token nào chưa bị revoke (thu hồi) hay không
-        console.log('isRevokedToken===>', isRevokedToken);
-        if (isRevokedToken) {
-          const tokenIds = existingToken.find(token => token.isRevoked === true); // tìm token nào có isRevoked === true để xóa, vì khi đã có 2 token thì sẽ có 1 token bị revoke và 1 token chưa bị revoke, nên mình sẽ xóa token nào bị revoke để chỉ giữ lại token chưa bị revoke thôi
-          console.log('tokenIds===>', tokenIds);
-          if (tokenIds) {
-            await this.refreshTokenRepository.delete({ // xóa token nào bị revoke để chỉ giữ lại token chưa bị revoke thôi
-              id: tokenIds.id
-            });
-          }
-          await this.refreshTokenRepository.update( // update token nào chưa bị revoke để set isRevoked thành true và expiredAt thành thời gian hiện tại để thu hồi token đó
-            { id: isRevokedToken.id },
-            {
-              isRevoked: true, // isRevoked sẽ được set thành true khi user logout hoặc khi refresh token bị nghi ngờ bị lộ, khi isRevoked là true thì sẽ không cho phép sử dụng refresh token đó để lấy access token mới nữa
-              expiredAt: new Date()
-            }
-          );
-          await this.refreshTokenRepository.save({
-            userId,
-            refreshToken,
-            isRevoked: false, // isRevoked sẽ được set thành true khi user logout hoặc khi refresh token bị nghi ngờ bị lộ, khi isRevoked là true thì sẽ không cho phép sử dụng refresh token đó để lấy access token mới nữa
-            expiredAt: new Date(Date.now() + ms(this.config.get<string>('JWT_REFRESH_EXPIRE') as StringValue)), // set thời gian hết hạn cho refresh token, expiresAt sẽ được so sánh với thời gian hiện tại để kiểm tra xem refresh token đã hết hạn hay chưa
-          });
-        } else {
-          await this.refreshTokenRepository.delete({ // xóa token nào bị revoke để chỉ giữ lại token chưa bị revoke thôi
-            id: existingToken[0].id
-          });
-          await this.refreshTokenRepository.save({
-            userId,
-            refreshToken,
-            isRevoked: false, // isRevoked sẽ được set thành true khi user logout hoặc khi refresh token bị nghi ngờ bị lộ, khi isRevoked là true thì sẽ không cho phép sử dụng refresh token đó để lấy access token mới nữa
-            expiredAt: new Date(Date.now() + ms(this.config.get<string>('JWT_REFRESH_EXPIRE') as StringValue)), // set thời gian hết hạn cho refresh token, expiresAt sẽ được so sánh với thời gian hiện tại để kiểm tra xem refresh token đã hết hạn hay chưa
-          });
-        }
-        // await this.refreshTokenRepository.update(
-        //   { userId: userId },
-        //   {
-        //     refreshToken: refreshToken,
-        //     isRevoked: false, // isRevoked sẽ được set thành true khi user logout hoặc khi refresh token bị nghi ngờ bị lộ, khi isRevoked là true thì sẽ không cho phép sử dụng refresh token đó để lấy access token mới nữa
-        //     expiredAt: new Date(Date.now() + ms(this.config.get<string>('JWT_REFRESH_EXPIRE') as StringValue))
-        //   },// set thời gian hết hạn cho refresh token, expiresAt sẽ được so sánh với thời gian hiện tại để kiểm tra xem refresh token đã hết hạn hay chưa
-        // );
-      }
-    } else {
-      await this.refreshTokenRepository.save({
-        userId,
-        refreshToken,
-        isRevoked: false, // isRevoked sẽ được set thành true khi user logout hoặc khi refresh token bị nghi ngờ bị lộ, khi isRevoked là true thì sẽ không cho phép sử dụng refresh token đó để lấy access token mới nữa
-        expiredAt: new Date(Date.now() + ms(this.config.get<string>('JWT_REFRESH_EXPIRE') as StringValue)), // set thời gian hết hạn cho refresh token, expiresAt sẽ được so sánh với thời gian hiện tại để kiểm tra xem refresh token đã hết hạn hay chưa
+
       });
+
+    } catch (error) {
+      console.error('Error handling login:', error);
+      return {
+        success: false,
+        message: 'Error handling login',
+        error: error.message,
+      };
     }
   }
 

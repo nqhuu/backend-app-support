@@ -17,7 +17,7 @@ import { AuthModule } from './auth/auth.module';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule], //import ConfigModule để sử dụng ConfigService (import có thể ví như phòng ban nào đó trong công ty)
       inject: [ConfigService], //inject có thể ví như việc mời ai đó từ phòng ban vào họp. Ở đây ta mời ConfigService vào để sử dụng, tức là đưa (tiêm) ConfigService vào hàm useFactory bên dưới. inject ConfigService vào factory function bên dưới (cách sử dụng Dependency Injection áp dụng cho trường hợp async không phải là class)
-      useFactory: (config: ConfigService) => ({
+      useFactory: (config: ConfigService) => ({ //useFactory có thể ví như việc tổ chức một cuộc họp, trong đó config là tham số đầu vào của cuộc họp, và object trả về là kết quả của cuộc họp. Ở đây useFactory sẽ trả về một object cấu hình cho TypeOrmModule, trong đó config.get<string>('DB_HOST') sẽ lấy giá trị của biến môi trường DB_HOST đã được load bởi ConfigModule ở trên để cấu hình kết nối với cơ sở dữ liệu
         type: 'mysql',
         host: config.get<string>('DB_HOST'),
         port: config.get<number>('DB_PORT'),
