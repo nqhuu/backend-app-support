@@ -7,6 +7,8 @@ import { UsersModule } from './users/users.module';
 import { DepartmentsModule } from './departments/departments.module';
 import { RefreshTokensModule } from './refresh_tokens/refresh_tokens.module';
 import { AuthModule } from './auth/auth.module';
+import { TokensModule } from './tokens/tokens.module';
+import { EmployeesModule } from './employees/employees.module';
 
 @Module({
   imports: [
@@ -26,13 +28,15 @@ import { AuthModule } from './auth/auth.module';
         database: config.get<string>('DB_NAME'),
         autoLoadEntities: true, // Tự động load tất cả các entity đã khai báo trong các module
         // synchronize: true, // chỉ DEV . TypeORM đọc entity và tự động tạo bảng tương ứng trong database nếu chưa tồn tại
-        logging: true,
+        // logging: true, // bật log câu lệnh SQL để dễ dàng debug trong quá trình phát triển, khi deploy lên production thì nên tắt logging để tránh bị lộ thông tin nhạy cảm trong câu lệnh SQL như tên bảng, tên cột, v.v. đồng thời cũng giúp cải thiện hiệu suất của ứng dụng vì không phải ghi log câu lệnh SQL nữa
       }),
     }),
     UsersModule,
     DepartmentsModule,
     RefreshTokensModule,
     AuthModule,
+    TokensModule,
+    EmployeesModule,
     // TypeOrmModule.forRoot({
     //   type: 'mysql', // hoặc postgres
     //   host: 'localhost',

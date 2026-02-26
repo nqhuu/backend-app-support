@@ -20,10 +20,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) { // 'jwt' dựa và
 
     // validate() sẽ được gọi sau khi token đã được giải mã thành công, payload là dữ liệu đã được mã hóa trong token, nếu validate() trả về giá trị thì giá trị đó sẽ được gán cho req.user, nếu validate() trả về null hoặc throw lỗi thì sẽ trả về lỗi UnauthorizedException
     async validate(payload: IUser) {
-        const { id, name, email, role } = payload;
+        const { id, username, email, role } = payload;
         return {
             id,
-            name,
+            username,
             email,
             role
         };

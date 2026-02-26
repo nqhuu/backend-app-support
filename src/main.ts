@@ -6,6 +6,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import { TransformInterceptor } from './core/transform.interceptor';
 import { HttpExceptionFilter } from './core/http-exception.filter';
+import { JwtAuthGuard } from './auth/jwt-auth.guard';
 
 
 async function bootstrap() {
@@ -18,6 +19,8 @@ async function bootstrap() {
 
   const reflector = app.get(Reflector); //dùng để lấy metadata đã gắn bởi Decorator
 
+  // global guard để bảo vệ các route bằng jwt
+  app.useGlobalGuards(new JwtAuthGuard(reflector));
 
   // Middleware chạy đâu tiên (nó sẽ được chạy trước Gard, Interceptor, Pipe, Controller...)
   app.enableCors(
@@ -45,7 +48,7 @@ async function bootstrap() {
   // app.useGlobalPipes(new ValidationPipe());
   app.useGlobalPipes(
     new ValidationPipe({
-      transform: true,   // 🔥 BẮT BUỘC
+      transform: true,   // BẮT BUỘC
       exceptionFactory: (errors) => {
         const messages = errors
           .map(err => Object.values(err.constraints || {}))

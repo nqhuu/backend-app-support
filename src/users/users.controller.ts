@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Req, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -8,6 +8,7 @@ import { IPaginationOptions, Pagination } from 'nestjs-typeorm-paginate';
 import { UserResponseDto } from './dto/respones-user.dto';
 import { plainToInstance } from 'class-transformer';
 import type { IUser } from './users.interface';
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 
 @Controller('users')
 export class UsersController {
@@ -27,6 +28,7 @@ export class UsersController {
   }
 
   @Get()
+  // @UseGuards(JwtAuthGuard) // có thể thêm guard để kiểm tra quyền truy cập vào endpoint này, ví dụ như chỉ cho phép admin mới được xem danh sách người dùng
   async findAll(
     @Query('page') page: number,
     @Query('limit') limit: number,

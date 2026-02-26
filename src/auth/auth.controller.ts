@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, Res } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './local-auth.guard';
-import { ResponseMessage } from 'src/decorator/customize';
+import { Public, ResponseMessage } from 'src/decorator/customize';
 import { Response } from 'express';
 
 @Controller('auth')
@@ -10,6 +10,7 @@ export class AuthController {
 
   // @Public()
   @UseGuards(LocalAuthGuard)
+  @Public()
   @Post('/login')
   @ResponseMessage('Đăng nhập thành công')
   handleLogin(
@@ -30,6 +31,14 @@ export class AuthController {
   // create(@Body() createAuthDto: CreateAuthDto) {
   //   return this.authService.create(createAuthDto);
   // }
+
+  @Post('/refresh/:id')
+  handleRefresh(
+    @Req() req,
+    @Res({ passthrough: true }) res
+  ) {
+    return this.authService.refreshToken(req, res);
+  }
 
   @Get()
   findAll() {
